@@ -1,0 +1,31 @@
+Flat package contents:
+
+SVE2 source:
+  fft1024_sve2.c
+  fft1024_sve2.h
+
+Comparison harness:
+  fft1024_compare.c
+  ne10_fft1024_adapter.c
+  ne10_fft1024_adapter.h
+  Makefile
+  README_FLAT.md
+
+CMSIS-DSP Ne10 source copied into this same flat directory:
+  CMSIS_NE10_*.h
+  CMSIS_NE10_*.c
+  NE10_*.c
+  LICENSE
+
+CMSIS-DSP headers copied flat by basename:
+  arm_*.h
+  *_functions*.h
+  transform_functions.h
+  transform_functions_f16.h
+  and other CMSIS-DSP public/private headers needed by the Ne10 sources.
+
+The benchmark build target `bench_ne10` compiles the included Ne10 float32
+source files directly:
+  CMSIS_NE10_fft_init.c
+  NE10_fft_float32.neonintrinsic.c
+

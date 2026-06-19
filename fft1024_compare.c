@@ -1,14 +1,11 @@
 #include "fft1024_sve2.h"
+#include "ne10_fft1024_adapter.h"
 
 #include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#if defined(FFT1024_USE_NE10)
-#include <NE10.h>
-#endif
 
 static inline uint64_t read_counter(void)
 {
@@ -85,45 +82,24 @@ static uint64_t measure_cfft_sve2(float *dst, const float *src,
     return total > copy_ticks ? total - copy_ticks : total;
 }
 
+static uint64_t measure_cfft_ne10(float *dst, const float *src, int iters)
+{
 #if defined(FFT1024_USE_NE10)
-static ne10_fft_cfg_float32_t g_ne10_cfg;
-
-static int ne10_fft_init_1024(void)
-{
-    if (ne10_init() != NE10_OK) {
-        fprintf(stderr, "ne10_init failed\n");
-        return -1;
-    }
-
-    g_ne10_cfg = ne10_fft_alloc_c2c_float32(FFT1024_F32_N);
-    if (!g_ne10_cfg) {
-        fprintf(stderr, "ne10_fft_alloc_c2c_float32 failed\n");
-        return -1;
-    }
-
-    return 0;
-}
-
-static uint64_t measure_cfft_ne10_neon(float *dst, const float *src, int iters)
-{
-    const size_t bytes = 2u * FFT1024_F32_N * sizeof(float);
     uint64_t t0 = read_counter();
 
     for (int i = 0; i < iters; i++) {
-        ne10_fft_c2c_1d_float32_neon((ne10_fft_cpx_float32_t *)dst,
-                                     (ne10_fft_cpx_float32_t *)src,
-                                     g_ne10_cfg,
-                                     0);
+        ne10_fft1024_cfft_f32_neon(dst, src);
     }
 
     uint64_t t1 = read_counter();
-    const uint64_t copy_ticks = measure_memcpy_ticks(dst, src, bytes, iters);
-    const uint64_t total = (t1 - t0) / (uint64_t)iters;
-
-    (void)copy_ticks;
-    return total;
-}
+    return (t1 - t0) / (uint64_t)iters;
+#else
+    (void)dst;
+    (void)src;
+    (void)iters;
+    return 0;
 #endif
+}
 
 int main(int argc, char **argv)
 {
@@ -153,17 +129,13 @@ int main(int argc, char **argv)
            max_abs_error(src, work, 2 * FFT1024_F32_N));
 
 #if defined(FFT1024_USE_NE10)
-    if (ne10_fft_init_1024() != 0) {
+    if (ne10_fft1024_adapter_init() != 0) {
         return 1;
     }
 #endif
 
     const uint64_t sve2_ticks = measure_cfft_sve2(work, src, ws, iters);
-    uint64_t ne10_neon_ticks = 0;
-
-#if defined(FFT1024_USE_NE10)
-    ne10_neon_ticks = measure_cfft_ne10_neon(work, src, iters);
-#endif
+    const uint64_t ne10_ticks = measure_cfft_ne10(work, src, iters);
 
 #if defined(FFT_BENCH_USE_PMCCNTR)
     printf("Counter source: PMCCNTR_EL0 cycles\n");
@@ -171,23 +143,27 @@ int main(int argc, char **argv)
     printf("Counter source: CNTVCT_EL0 ticks. Use perf stat for architectural cycles.\n");
 #endif
     printf("Iterations: %d\n\n", iters);
-    printf("Kernel             ticks/call     ratio vs Ne10\n");
+    printf("Kernel             ticks/call     SVE2/NE10\n");
     printf("CFFT1024 SVE2      %10llu",
            (unsigned long long)sve2_ticks);
-    if (ne10_neon_ticks) {
-        printf("     %9.4f\n", (double)sve2_ticks / (double)ne10_neon_ticks);
+    if (ne10_ticks) {
+        printf("     %9.4f\n", (double)sve2_ticks / (double)ne10_ticks);
     } else {
         printf("     unavailable\n");
     }
 
     printf("CFFT1024 Ne10 NEON ");
-    if (ne10_neon_ticks) {
+    if (ne10_ticks) {
         printf("%10llu     %9.4f\n",
-               (unsigned long long)ne10_neon_ticks,
+               (unsigned long long)ne10_ticks,
                1.0);
     } else {
         printf("unavailable     unavailable\n");
     }
+
+#if defined(FFT1024_USE_NE10)
+    ne10_fft1024_adapter_destroy();
+#endif
 
     free(work);
     free(src);
