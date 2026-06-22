@@ -30,7 +30,7 @@ WARN_FLAGS ?= -Wall -Wextra
 NE10_INC ?= -I.
 NE10_LIB ?=
 NE10_LDLIBS ?=
-NE10_CFLAGS ?= -include cmsis_flat_compat.h
+NE10_CFLAGS ?= -include cmsis_flat_compat.h -DARM_MATH_NEON
 
 CFLAGS ?= $(TARGET_FLAGS) $(ARCH_FLAGS) $(OPT_FLAGS) $(WARN_FLAGS)
 LDFLAGS ?= $(TARGET_FLAGS)
