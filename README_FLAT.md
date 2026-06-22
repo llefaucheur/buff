@@ -23,6 +23,7 @@ Benchmark/adapter:
 fft1024_compare.c
 ne10_fft1024_adapter.c
 ne10_fft1024_adapter.h
+cmsis_flat_compat.h
 Makefile
 ```
 
@@ -37,6 +38,9 @@ CMSIS_NE10_macros.h
 ```
 
 Additional Ne10/CMSIS files are also present in the folder for completeness.
+
+`cmsis_flat_compat.h` supplies the small CMSIS-Core compiler macros needed when
+building the copied CMSIS-DSP headers as a standalone flat package.
 
 ## Build SVE2 Only
 
@@ -103,4 +107,3 @@ The default timer is `CNTVCT_EL0`; use `perf stat` on Orion-O6 for architectural
 ```sh
 perf stat -e cycles,instructions,cache-references,cache-misses ./fft1024_compare 1000
 ```
-

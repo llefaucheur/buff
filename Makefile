@@ -30,6 +30,7 @@ WARN_FLAGS ?= -Wall -Wextra
 NE10_INC ?= -I.
 NE10_LIB ?=
 NE10_LDLIBS ?=
+NE10_CFLAGS ?= -include cmsis_flat_compat.h
 
 CFLAGS ?= $(TARGET_FLAGS) $(ARCH_FLAGS) $(OPT_FLAGS) $(WARN_FLAGS)
 LDFLAGS ?= $(TARGET_FLAGS)
@@ -51,14 +52,14 @@ fft1024_sve2.o: fft1024_sve2.c fft1024_sve2.h
 fft1024_compare.o: fft1024_compare.c fft1024_sve2.h ne10_fft1024_adapter.h
 	$(CC) $(CFLAGS) -c -o $@ fft1024_compare.c
 
-ne10_fft1024_adapter.o: ne10_fft1024_adapter.c ne10_fft1024_adapter.h
-	$(CC) $(CFLAGS) $(NE10_INC) -c -o $@ ne10_fft1024_adapter.c
+ne10_fft1024_adapter.o: ne10_fft1024_adapter.c ne10_fft1024_adapter.h cmsis_flat_compat.h
+	$(CC) $(CFLAGS) $(NE10_CFLAGS) $(NE10_INC) -c -o $@ ne10_fft1024_adapter.c
 
-CMSIS_NE10_fft_init.o: CMSIS_NE10_fft_init.c CMSIS_NE10_fft.h CMSIS_NE10_types.h CMSIS_NE10_macros.h
-	$(CC) $(CFLAGS) $(NE10_INC) -c -o $@ CMSIS_NE10_fft_init.c
+CMSIS_NE10_fft_init.o: CMSIS_NE10_fft_init.c CMSIS_NE10_fft.h CMSIS_NE10_types.h CMSIS_NE10_macros.h cmsis_flat_compat.h
+	$(CC) $(CFLAGS) $(NE10_CFLAGS) $(NE10_INC) -c -o $@ CMSIS_NE10_fft_init.c
 
-NE10_fft_float32.neonintrinsic.o: NE10_fft_float32.neonintrinsic.c CMSIS_NE10_fft.h CMSIS_NE10_types.h
-	$(CC) $(CFLAGS) $(NE10_INC) -c -o $@ NE10_fft_float32.neonintrinsic.c
+NE10_fft_float32.neonintrinsic.o: NE10_fft_float32.neonintrinsic.c CMSIS_NE10_fft.h CMSIS_NE10_types.h cmsis_flat_compat.h
+	$(CC) $(CFLAGS) $(NE10_CFLAGS) $(NE10_INC) -c -o $@ NE10_fft_float32.neonintrinsic.c
 
 bench: fft1024_sve2.o fft1024_compare.o ne10_fft1024_adapter.o
 	$(CC) $(LDFLAGS) -o fft1024_compare fft1024_sve2.o fft1024_compare.o ne10_fft1024_adapter.o $(LDLIBS)
