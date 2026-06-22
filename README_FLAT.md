@@ -71,6 +71,14 @@ make bench_ne10 CC=clang ARCH_FLAGS="-march=armv9.2-a+sve2"
 ./fft1024_compare 1000
 ```
 
+If the A520 uses 128-bit SVE, also test fixed-width SVE codegen:
+
+```sh
+make clean
+make bench_ne10 CC=clang ARCH_FLAGS="-march=armv9.2-a+sve2" SVE_BITS=128
+./fft1024_compare 1000
+```
+
 Cross-compile from x86_64:
 
 ```sh

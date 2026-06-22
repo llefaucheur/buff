@@ -3,6 +3,7 @@ AR ?= ar
 TARGET ?=
 SYSROOT ?=
 CPU ?= cortex-a520
+SVE_BITS ?=
 
 HOST_MACHINE := $(shell uname -m 2>/dev/null || echo unknown)
 USING_CLANG := $(findstring clang,$(notdir $(CC)))
@@ -25,6 +26,9 @@ TARGET_FLAGS += --sysroot=$(SYSROOT)
 endif
 
 ARCH_FLAGS ?= -mcpu=$(CPU)
+ifneq ($(SVE_BITS),)
+ARCH_FLAGS += -msve-vector-bits=$(SVE_BITS)
+endif
 OPT_FLAGS ?= -O3 -ffast-math -fno-math-errno
 WARN_FLAGS ?= -Wall -Wextra
 NE10_INC ?= -I.

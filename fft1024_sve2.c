@@ -126,6 +126,27 @@ static void split_store_interleaved_1024(float *x, const float *re, const float 
     }
 }
 
+static void conj_scale_interleaved_1024(float *x, float scale)
+{
+    uint64_t i = 0;
+    svfloat32_t vs = svdup_f32(scale);
+    svfloat32_t vns = svdup_f32(-scale);
+
+    while (i < FFT1024_F32_N) {
+        svbool_t pg = svwhilelt_b32(i, (uint64_t)FFT1024_F32_N);
+        svfloat32x2_t z = svld2_f32(pg, &x[2 * i]);
+        svfloat32_t vr = svmul_f32_z(pg, svget2_f32(z, 0), vs);
+        svfloat32_t vi = svmul_f32_z(pg, svget2_f32(z, 1), vns);
+        svst2_f32(pg, &x[2 * i], svcreate2_f32(vr, vi));
+        i += svcntw();
+    }
+}
+
+static void conj_interleaved_1024(float *x)
+{
+    conj_scale_interleaved_1024(x, 1.0f);
+}
+
 static inline void radix4_notwiddle_scalar(float *re, float *im,
                                            int base, int q, int inverse)
 {
@@ -427,8 +448,7 @@ void cfft1024_f32_sve2_profile_parts(float *x_interleaved,
 
 void icfft1024_f32_sve2(float *x_interleaved, fft1024_f32_workspace *ws)
 {
-    fft1024_f32_sve2_init();
-    split_load_interleaved_digitrev_1024(x_interleaved, ws->re, ws->im);
-    cfft1024_split_radix4_core_ordered(ws->re, ws->im, 1);
-    split_store_interleaved_1024(x_interleaved, ws->re, ws->im);
+    conj_interleaved_1024(x_interleaved);
+    cfft1024_f32_sve2(x_interleaved, ws);
+    conj_scale_interleaved_1024(x_interleaved, 1.0f / (float)FFT1024_F32_N);
 }
