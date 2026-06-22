@@ -19,6 +19,7 @@ typedef struct {
 } fft1024_plan;
 
 static fft1024_plan g_plan;
+static uint16_t g_digit_rev[FFT1024_F32_N];
 static int g_init_done;
 
 static void init_plan(void)
@@ -44,14 +45,6 @@ static void init_plan(void)
     }
 }
 
-void fft1024_f32_sve2_init(void)
-{
-    if (!g_init_done) {
-        init_plan();
-        g_init_done = 1;
-    }
-}
-
 static unsigned reverse_base4_5digits(unsigned x)
 {
     unsigned y = 0;
@@ -62,6 +55,31 @@ static unsigned reverse_base4_5digits(unsigned x)
     }
 
     return y;
+}
+
+static void init_digit_reverse_table(void)
+{
+    for (unsigned i = 0; i < FFT1024_F32_N; i++) {
+        g_digit_rev[i] = (uint16_t)reverse_base4_5digits(i);
+    }
+}
+
+static void split_load_interleaved_digitrev_1024(const float *x, float *re, float *im)
+{
+    for (int i = 0; i < FFT1024_F32_N; i++) {
+        const int r = g_digit_rev[i];
+        re[r] = x[2 * i];
+        im[r] = x[2 * i + 1];
+    }
+}
+
+void fft1024_f32_sve2_init(void)
+{
+    if (!g_init_done) {
+        init_plan();
+        init_digit_reverse_table();
+        g_init_done = 1;
+    }
 }
 
 static void digit_reverse_base4(float *re, float *im)
@@ -79,6 +97,9 @@ static void digit_reverse_base4(float *re, float *im)
     }
 }
 
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static void split_load_interleaved_1024(const float *x, float *re, float *im)
 {
     uint64_t i = 0;
@@ -105,6 +126,53 @@ static void split_store_interleaved_1024(float *x, const float *re, const float 
     }
 }
 
+static inline void radix4_notwiddle_scalar(float *re, float *im,
+                                           int base, int q, int inverse)
+{
+    const int i0 = base;
+    const int i1 = base + q;
+    const int i2 = base + 2 * q;
+    const int i3 = base + 3 * q;
+
+    const float x0r = re[i0];
+    const float x0i = im[i0];
+    const float x1r = re[i1];
+    const float x1i = im[i1];
+    const float x2r = re[i2];
+    const float x2i = im[i2];
+    const float x3r = re[i3];
+    const float x3i = im[i3];
+
+    const float s02r = x0r + x2r;
+    const float s02i = x0i + x2i;
+    const float d02r = x0r - x2r;
+    const float d02i = x0i - x2i;
+    const float s13r = x1r + x3r;
+    const float s13i = x1i + x3i;
+    const float d13r = x1r - x3r;
+    const float d13i = x1i - x3i;
+
+    re[i0] = s02r + s13r;
+    im[i0] = s02i + s13i;
+    re[i2] = s02r - s13r;
+    im[i2] = s02i - s13i;
+
+    if (inverse) {
+        re[i1] = d02r - d13i;
+        im[i1] = d02i + d13r;
+        re[i3] = d02r + d13i;
+        im[i3] = d02i - d13r;
+    } else {
+        re[i1] = d02r + d13i;
+        im[i1] = d02i - d13r;
+        re[i3] = d02r - d13i;
+        im[i3] = d02i + d13r;
+    }
+}
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((unused))
+#endif
 static void cfft1024_split_radix4(float *re, float *im, int inverse)
 {
     digit_reverse_base4(re, im);
@@ -118,7 +186,9 @@ static void cfft1024_split_radix4(float *re, float *im, int inverse)
         const int w3off = off + 2 * q;
 
         for (int base = 0; base < FFT1024_F32_N; base += m) {
-            int j = 0;
+            int j = 1;
+
+            radix4_notwiddle_scalar(re, im, base, q, inverse);
 
             while (j < q) {
                 svbool_t pg = svwhilelt_b32((uint32_t)j, (uint32_t)q);
@@ -235,7 +305,9 @@ static void cfft1024_split_radix4_core_ordered(float *re, float *im, int inverse
         const int w3off = off + 2 * q;
 
         for (int base = 0; base < FFT1024_F32_N; base += m) {
-            int j = 0;
+            int j = 1;
+
+            radix4_notwiddle_scalar(re, im, base, q, inverse);
 
             while (j < q) {
                 svbool_t pg = svwhilelt_b32((uint32_t)j, (uint32_t)q);
@@ -324,8 +396,8 @@ static void cfft1024_split_radix4_core_ordered(float *re, float *im, int inverse
 void cfft1024_f32_sve2(float *x_interleaved, fft1024_f32_workspace *ws)
 {
     fft1024_f32_sve2_init();
-    split_load_interleaved_1024(x_interleaved, ws->re, ws->im);
-    cfft1024_split_radix4(ws->re, ws->im, 0);
+    split_load_interleaved_digitrev_1024(x_interleaved, ws->re, ws->im);
+    cfft1024_split_radix4_core_ordered(ws->re, ws->im, 0);
     split_store_interleaved_1024(x_interleaved, ws->re, ws->im);
 }
 
@@ -339,10 +411,9 @@ void cfft1024_f32_sve2_profile_parts(float *x_interleaved,
     fft1024_f32_sve2_init();
 
     uint64_t t0 = fft1024_read_counter();
-    split_load_interleaved_1024(x_interleaved, ws->re, ws->im);
+    split_load_interleaved_digitrev_1024(x_interleaved, ws->re, ws->im);
     uint64_t t1 = fft1024_read_counter();
-    digit_reverse_base4(ws->re, ws->im);
-    uint64_t t2 = fft1024_read_counter();
+    uint64_t t2 = t1;
     cfft1024_split_radix4_core_ordered(ws->re, ws->im, 0);
     uint64_t t3 = fft1024_read_counter();
     split_store_interleaved_1024(x_interleaved, ws->re, ws->im);
@@ -357,7 +428,7 @@ void cfft1024_f32_sve2_profile_parts(float *x_interleaved,
 void icfft1024_f32_sve2(float *x_interleaved, fft1024_f32_workspace *ws)
 {
     fft1024_f32_sve2_init();
-    split_load_interleaved_1024(x_interleaved, ws->re, ws->im);
-    cfft1024_split_radix4(ws->re, ws->im, 1);
+    split_load_interleaved_digitrev_1024(x_interleaved, ws->re, ws->im);
+    cfft1024_split_radix4_core_ordered(ws->re, ws->im, 1);
     split_store_interleaved_1024(x_interleaved, ws->re, ws->im);
 }

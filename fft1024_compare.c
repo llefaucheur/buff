@@ -129,9 +129,9 @@ static void print_sve2_breakdown(float *dst, const float *src,
     }
 
     printf("\nSVE2 breakdown, ticks/call:\n");
-    printf("  split load/store-in: %10llu\n",
+    printf("  digitrev input load: %10llu\n",
            split_total / (unsigned long long)iters);
-    printf("  base-4 reorder:      %10llu\n",
+    printf("  separate reorder:    %10llu\n",
            reorder_total / (unsigned long long)iters);
     printf("  radix-4 core:        %10llu\n",
            core_total / (unsigned long long)iters);
