@@ -102,6 +102,10 @@ CFFT1024 SVE2      ...
 CFFT1024 Ne10 NEON ...
 ```
 
+Check the round-trip error first. It should be small for float32, not hundreds
+or thousands. A large value means the SVE2 forward/inverse pair is not valid,
+even if the forward-only timing table still prints.
+
 The default timer is `CNTVCT_EL0`; use `perf stat` on Orion-O6 for architectural cycle counts:
 
 ```sh
