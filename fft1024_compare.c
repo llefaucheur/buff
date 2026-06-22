@@ -101,6 +101,44 @@ static uint64_t measure_cfft_ne10(float *dst, const float *src, int iters)
 #endif
 }
 
+static void print_sve2_breakdown(float *dst, const float *src,
+                                 fft1024_f32_workspace *ws, int iters)
+{
+    const size_t bytes = 2u * FFT1024_F32_N * sizeof(float);
+    unsigned long long split_total = 0;
+    unsigned long long reorder_total = 0;
+    unsigned long long core_total = 0;
+    unsigned long long store_total = 0;
+
+    for (int i = 0; i < iters; i++) {
+        unsigned long long split_ticks;
+        unsigned long long reorder_ticks;
+        unsigned long long core_ticks;
+        unsigned long long store_ticks;
+
+        memcpy(dst, src, bytes);
+        cfft1024_f32_sve2_profile_parts(dst, ws,
+                                        &split_ticks,
+                                        &reorder_ticks,
+                                        &core_ticks,
+                                        &store_ticks);
+        split_total += split_ticks;
+        reorder_total += reorder_ticks;
+        core_total += core_ticks;
+        store_total += store_ticks;
+    }
+
+    printf("\nSVE2 breakdown, ticks/call:\n");
+    printf("  split load/store-in: %10llu\n",
+           split_total / (unsigned long long)iters);
+    printf("  base-4 reorder:      %10llu\n",
+           reorder_total / (unsigned long long)iters);
+    printf("  radix-4 core:        %10llu\n",
+           core_total / (unsigned long long)iters);
+    printf("  interleaved store:   %10llu\n",
+           store_total / (unsigned long long)iters);
+}
+
 int main(int argc, char **argv)
 {
     int iters = 1000;
@@ -160,6 +198,8 @@ int main(int argc, char **argv)
     } else {
         printf("unavailable     unavailable\n");
     }
+
+    print_sve2_breakdown(work, src, ws, iters < 100 ? iters : 100);
 
 #if defined(FFT1024_USE_NE10)
     ne10_fft1024_adapter_destroy();

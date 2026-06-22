@@ -23,6 +23,13 @@ void fft1024_f32_sve2_init(void);
 void cfft1024_f32_sve2(float *x_interleaved, fft1024_f32_workspace *ws);
 void icfft1024_f32_sve2(float *x_interleaved, fft1024_f32_workspace *ws);
 
+void cfft1024_f32_sve2_profile_parts(float *x_interleaved,
+                                      fft1024_f32_workspace *ws,
+                                      unsigned long long *split_ticks,
+                                      unsigned long long *reorder_ticks,
+                                      unsigned long long *core_ticks,
+                                      unsigned long long *store_ticks);
+
 #ifdef __cplusplus
 }
 #endif

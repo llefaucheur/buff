@@ -145,24 +145,19 @@ static void cfft1024_split_radix4(float *re, float *im, int inverse)
                     w3i = svneg_f32_z(pg, w3i);
                 }
 
-                svfloat32_t a1r = svsub_f32_z(pg,
-                                              svmul_f32_z(pg, x1r, w1r),
-                                              svmul_f32_z(pg, x1i, w1i));
-                svfloat32_t a1i = svadd_f32_z(pg,
-                                              svmul_f32_z(pg, x1r, w1i),
-                                              svmul_f32_z(pg, x1i, w1r));
-                svfloat32_t a2r = svsub_f32_z(pg,
-                                              svmul_f32_z(pg, x2r, w2r),
-                                              svmul_f32_z(pg, x2i, w2i));
-                svfloat32_t a2i = svadd_f32_z(pg,
-                                              svmul_f32_z(pg, x2r, w2i),
-                                              svmul_f32_z(pg, x2i, w2r));
-                svfloat32_t a3r = svsub_f32_z(pg,
-                                              svmul_f32_z(pg, x3r, w3r),
-                                              svmul_f32_z(pg, x3i, w3i));
-                svfloat32_t a3i = svadd_f32_z(pg,
-                                              svmul_f32_z(pg, x3r, w3i),
-                                              svmul_f32_z(pg, x3i, w3r));
+                svfloat32_t a1r = svmul_f32_z(pg, x1r, w1r);
+                svfloat32_t a1i = svmul_f32_z(pg, x1i, w1r);
+                svfloat32_t a2r = svmul_f32_z(pg, x2r, w2r);
+                svfloat32_t a2i = svmul_f32_z(pg, x2i, w2r);
+                svfloat32_t a3r = svmul_f32_z(pg, x3r, w3r);
+                svfloat32_t a3i = svmul_f32_z(pg, x3i, w3r);
+
+                a1r = svmls_f32_z(pg, a1r, x1i, w1i);
+                a1i = svmla_f32_z(pg, a1i, x1r, w1i);
+                a2r = svmls_f32_z(pg, a2r, x2i, w2i);
+                a2i = svmla_f32_z(pg, a2i, x2r, w2i);
+                a3r = svmls_f32_z(pg, a3r, x3i, w3i);
+                a3i = svmla_f32_z(pg, a3i, x3r, w3i);
 
                 svfloat32_t s02r = svadd_f32_z(pg, x0r, a2r);
                 svfloat32_t s02i = svadd_f32_z(pg, x0i, a2i);
@@ -222,12 +217,141 @@ static void cfft1024_split_radix4(float *re, float *im, int inverse)
     }
 }
 
+static inline uint64_t fft1024_read_counter(void)
+{
+    uint64_t v;
+    __asm__ volatile("isb; mrs %0, cntvct_el0" : "=r"(v));
+    return v;
+}
+
+static void cfft1024_split_radix4_core_ordered(float *re, float *im, int inverse)
+{
+    for (int stage = 0; stage < FFT1024_RADIX4_STAGES; stage++) {
+        const int m = g_plan.m[stage];
+        const int q = m >> 2;
+        const int off = g_plan.offsets[stage];
+        const int w1off = off;
+        const int w2off = off + q;
+        const int w3off = off + 2 * q;
+
+        for (int base = 0; base < FFT1024_F32_N; base += m) {
+            int j = 0;
+
+            while (j < q) {
+                svbool_t pg = svwhilelt_b32((uint32_t)j, (uint32_t)q);
+
+                svfloat32_t x0r = svld1_f32(pg, &re[base + j]);
+                svfloat32_t x0i = svld1_f32(pg, &im[base + j]);
+                svfloat32_t x1r = svld1_f32(pg, &re[base + q + j]);
+                svfloat32_t x1i = svld1_f32(pg, &im[base + q + j]);
+                svfloat32_t x2r = svld1_f32(pg, &re[base + 2 * q + j]);
+                svfloat32_t x2i = svld1_f32(pg, &im[base + 2 * q + j]);
+                svfloat32_t x3r = svld1_f32(pg, &re[base + 3 * q + j]);
+                svfloat32_t x3i = svld1_f32(pg, &im[base + 3 * q + j]);
+
+                svfloat32_t w1r = svld1_f32(pg, &g_plan.tw_re[w1off + j]);
+                svfloat32_t w1i = svld1_f32(pg, &g_plan.tw_im[w1off + j]);
+                svfloat32_t w2r = svld1_f32(pg, &g_plan.tw_re[w2off + j]);
+                svfloat32_t w2i = svld1_f32(pg, &g_plan.tw_im[w2off + j]);
+                svfloat32_t w3r = svld1_f32(pg, &g_plan.tw_re[w3off + j]);
+                svfloat32_t w3i = svld1_f32(pg, &g_plan.tw_im[w3off + j]);
+
+                if (inverse) {
+                    w1i = svneg_f32_z(pg, w1i);
+                    w2i = svneg_f32_z(pg, w2i);
+                    w3i = svneg_f32_z(pg, w3i);
+                }
+
+                svfloat32_t a1r = svmul_f32_z(pg, x1r, w1r);
+                svfloat32_t a1i = svmul_f32_z(pg, x1i, w1r);
+                svfloat32_t a2r = svmul_f32_z(pg, x2r, w2r);
+                svfloat32_t a2i = svmul_f32_z(pg, x2i, w2r);
+                svfloat32_t a3r = svmul_f32_z(pg, x3r, w3r);
+                svfloat32_t a3i = svmul_f32_z(pg, x3i, w3r);
+
+                a1r = svmls_f32_z(pg, a1r, x1i, w1i);
+                a1i = svmla_f32_z(pg, a1i, x1r, w1i);
+                a2r = svmls_f32_z(pg, a2r, x2i, w2i);
+                a2i = svmla_f32_z(pg, a2i, x2r, w2i);
+                a3r = svmls_f32_z(pg, a3r, x3i, w3i);
+                a3i = svmla_f32_z(pg, a3i, x3r, w3i);
+
+                svfloat32_t s02r = svadd_f32_z(pg, x0r, a2r);
+                svfloat32_t s02i = svadd_f32_z(pg, x0i, a2i);
+                svfloat32_t d02r = svsub_f32_z(pg, x0r, a2r);
+                svfloat32_t d02i = svsub_f32_z(pg, x0i, a2i);
+                svfloat32_t s13r = svadd_f32_z(pg, a1r, a3r);
+                svfloat32_t s13i = svadd_f32_z(pg, a1i, a3i);
+                svfloat32_t d13r = svsub_f32_z(pg, a1r, a3r);
+                svfloat32_t d13i = svsub_f32_z(pg, a1i, a3i);
+
+                svfloat32_t y0r = svadd_f32_z(pg, s02r, s13r);
+                svfloat32_t y0i = svadd_f32_z(pg, s02i, s13i);
+                svfloat32_t y2r = svsub_f32_z(pg, s02r, s13r);
+                svfloat32_t y2i = svsub_f32_z(pg, s02i, s13i);
+                svfloat32_t y1r;
+                svfloat32_t y1i;
+                svfloat32_t y3r;
+                svfloat32_t y3i;
+
+                if (inverse) {
+                    y1r = svsub_f32_z(pg, d02r, d13i);
+                    y1i = svadd_f32_z(pg, d02i, d13r);
+                    y3r = svadd_f32_z(pg, d02r, d13i);
+                    y3i = svsub_f32_z(pg, d02i, d13r);
+                } else {
+                    y1r = svadd_f32_z(pg, d02r, d13i);
+                    y1i = svsub_f32_z(pg, d02i, d13r);
+                    y3r = svsub_f32_z(pg, d02r, d13i);
+                    y3i = svadd_f32_z(pg, d02i, d13r);
+                }
+
+                svst1_f32(pg, &re[base + j], y0r);
+                svst1_f32(pg, &im[base + j], y0i);
+                svst1_f32(pg, &re[base + q + j], y1r);
+                svst1_f32(pg, &im[base + q + j], y1i);
+                svst1_f32(pg, &re[base + 2 * q + j], y2r);
+                svst1_f32(pg, &im[base + 2 * q + j], y2i);
+                svst1_f32(pg, &re[base + 3 * q + j], y3r);
+                svst1_f32(pg, &im[base + 3 * q + j], y3i);
+
+                j += (int)svcntw();
+            }
+        }
+    }
+}
+
 void cfft1024_f32_sve2(float *x_interleaved, fft1024_f32_workspace *ws)
 {
     fft1024_f32_sve2_init();
     split_load_interleaved_1024(x_interleaved, ws->re, ws->im);
     cfft1024_split_radix4(ws->re, ws->im, 0);
     split_store_interleaved_1024(x_interleaved, ws->re, ws->im);
+}
+
+void cfft1024_f32_sve2_profile_parts(float *x_interleaved,
+                                      fft1024_f32_workspace *ws,
+                                      unsigned long long *split_ticks,
+                                      unsigned long long *reorder_ticks,
+                                      unsigned long long *core_ticks,
+                                      unsigned long long *store_ticks)
+{
+    fft1024_f32_sve2_init();
+
+    uint64_t t0 = fft1024_read_counter();
+    split_load_interleaved_1024(x_interleaved, ws->re, ws->im);
+    uint64_t t1 = fft1024_read_counter();
+    digit_reverse_base4(ws->re, ws->im);
+    uint64_t t2 = fft1024_read_counter();
+    cfft1024_split_radix4_core_ordered(ws->re, ws->im, 0);
+    uint64_t t3 = fft1024_read_counter();
+    split_store_interleaved_1024(x_interleaved, ws->re, ws->im);
+    uint64_t t4 = fft1024_read_counter();
+
+    *split_ticks = (unsigned long long)(t1 - t0);
+    *reorder_ticks = (unsigned long long)(t2 - t1);
+    *core_ticks = (unsigned long long)(t3 - t2);
+    *store_ticks = (unsigned long long)(t4 - t3);
 }
 
 void icfft1024_f32_sve2(float *x_interleaved, fft1024_f32_workspace *ws)
