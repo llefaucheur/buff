@@ -119,3 +119,41 @@ The default timer is `CNTVCT_EL0`; use `perf stat` on Orion-O6 for architectural
 ```sh
 perf stat -e cycles,instructions,cache-references,cache-misses ./fft1024_compare 1000
 ```
+
+## Assembly Review
+
+Generate assembly for the SVE2 source and the CMSIS-Ne10 NEON source:
+
+```sh
+make asm CC=clang ARCH_FLAGS="-march=armv9.2-a+sve2"
+```
+
+The generated files are written to:
+
+```text
+asm/fft1024_sve2.s
+asm/fft1024_compare.s
+asm/ne10_fft1024_adapter.s
+asm/CMSIS_NE10_fft_init.s
+asm/NE10_fft_float32.neonintrinsic.s
+```
+
+For Cortex-A520 review, also test fixed 128-bit SVE code generation:
+
+```sh
+make asm_clean
+make asm CC=clang ARCH_FLAGS="-march=armv9.2-a+sve2" SVE_BITS=128
+```
+
+Generate only one side:
+
+```sh
+make asm_sve2 CC=clang ARCH_FLAGS="-march=armv9.2-a+sve2" SVE_BITS=128
+make asm_ne10 CC=clang ARCH_FLAGS="-march=armv9.2-a+sve2"
+```
+
+Remove generated assembly:
+
+```sh
+make asm_clean
+```
