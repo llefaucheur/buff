@@ -76,15 +76,16 @@ bench_ne10: clean_objects fft1024_sve2.o fft1024_compare.o ne10_fft1024_adapter.
 
 asm: asm_sve2 asm_ne10
 
-$(ASM_DIR):
+$(ASM_DIR)/.dir:
 	mkdir -p $(ASM_DIR)
+	touch $(ASM_DIR)/.dir
 
-asm_sve2: $(ASM_DIR)
+asm_sve2: $(ASM_DIR)/.dir
 	$(CC) $(CFLAGS) $(ASM_FLAGS) -o $(ASM_DIR)/fft1024_sve2.s fft1024_sve2.c
 	$(CC) $(CFLAGS) $(ASM_FLAGS) -o $(ASM_DIR)/fft1024_compare.s fft1024_compare.c
 
 asm_ne10: CFLAGS += -DFFT1024_USE_NE10
-asm_ne10: $(ASM_DIR)
+asm_ne10: $(ASM_DIR)/.dir
 	$(CC) $(CFLAGS) $(NE10_CFLAGS) $(NE10_INC) $(ASM_FLAGS) -o $(ASM_DIR)/ne10_fft1024_adapter.s ne10_fft1024_adapter.c
 	$(CC) $(CFLAGS) $(NE10_CFLAGS) $(NE10_INC) $(ASM_FLAGS) -o $(ASM_DIR)/CMSIS_NE10_fft_init.s CMSIS_NE10_fft_init.c
 	$(CC) $(CFLAGS) $(NE10_CFLAGS) $(NE10_INC) $(ASM_FLAGS) -o $(ASM_DIR)/NE10_fft_float32.neonintrinsic.s NE10_fft_float32.neonintrinsic.c
