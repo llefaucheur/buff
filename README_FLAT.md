@@ -48,6 +48,11 @@ The radix-8 SVE2 design note is in:
 RADIX8_SVE2_PROPOSAL.md
 ```
 
+The SVE2 radix-4 twiddle multiply in `fft1024_sve2.c` uses the explicit
+`cmul_forward_mla_f32()` helper. It is written in the same style as Ne10's
+complex multiply macro: start with real-lane multiplies, then use SVE
+`svmls_f32_x` / `svmla_f32_x` for the fused subtract/add terms.
+
 ## Build SVE2 Only
 
 On Orion-O6:
@@ -117,9 +122,14 @@ CFFT1024 Ne10 NEON ...
 ```
 
 The SVE2 table line is measured with one outer timer around repeated calls to
-`cfft1024_f32_sve2()`. The source is copied once before timing, then the FFT is
-run repeatedly in-place. This avoids putting `memcpy` inside the timed loop and
-also avoids subtracting a separate memcpy measurement.
+`cfft1024_f32_sve2()`. Before timing, the benchmark fills a batch buffer with
+one fresh 1024-point input per iteration. The timed loop then runs one in-place
+FFT on each batch entry. This avoids putting `memcpy` inside the timed loop,
+avoids subtracting a separate memcpy measurement, and avoids repeatedly applying
+an unnormalized FFT to the same buffer.
+
+The Ne10 table line uses the same batch-input idea: one source entry and one
+destination entry per timed iteration.
 
 The printed SVE2 breakdown is diagnostic only. It uses extra counter reads
 inside the FFT call, so its `profiled total` can be higher than the clean table

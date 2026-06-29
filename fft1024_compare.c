@@ -60,11 +60,14 @@ static uint64_t measure_cfft_sve2_kernel(float *work,
 {
     const size_t bytes = 2u * FFT1024_F32_N * sizeof(float);
 
-    memcpy(work, src, bytes);
+    for (int i = 0; i < iters; i++) {
+        memcpy(&work[(size_t)i * 2u * FFT1024_F32_N], src, bytes);
+    }
+
     uint64_t t0 = read_counter();
 
     for (int i = 0; i < iters; i++) {
-        cfft1024_f32_sve2(work, ws);
+        cfft1024_f32_sve2(&work[(size_t)i * 2u * FFT1024_F32_N], ws);
     }
 
     uint64_t t1 = read_counter();
@@ -74,10 +77,12 @@ static uint64_t measure_cfft_sve2_kernel(float *work,
 static uint64_t measure_cfft_ne10(float *dst, const float *src, int iters)
 {
 #if defined(FFT1024_USE_NE10)
+    const size_t samples = 2u * FFT1024_F32_N;
     uint64_t t0 = read_counter();
 
     for (int i = 0; i < iters; i++) {
-        ne10_fft1024_cfft_f32_neon(dst, src);
+        ne10_fft1024_cfft_f32_neon(&dst[(size_t)i * samples],
+                                   &src[(size_t)i * samples]);
     }
 
     uint64_t t1 = read_counter();
@@ -175,6 +180,11 @@ int main(int argc, char **argv)
                                                 2u * FFT1024_F32_N * sizeof(float));
     float *work = (float *)aligned_malloc_or_die(FFT1024_F32_ALIGNMENT,
                                                  2u * FFT1024_F32_N * sizeof(float));
+    const size_t bench_samples = (size_t)iters * 2u * FFT1024_F32_N;
+    float *bench_src = (float *)aligned_malloc_or_die(FFT1024_F32_ALIGNMENT,
+                                                      bench_samples * sizeof(float));
+    float *bench_work = (float *)aligned_malloc_or_die(FFT1024_F32_ALIGNMENT,
+                                                       bench_samples * sizeof(float));
 
     fft1024_f32_sve2_init();
     fill_complex(src);
@@ -193,8 +203,15 @@ int main(int argc, char **argv)
 
     const sve2_profile_result sve2_profile =
         measure_cfft_sve2_profiled(work, src, ws, iters < 100 ? iters : 100);
-    const uint64_t sve2_ticks = measure_cfft_sve2_kernel(work, src, ws, iters);
-    const uint64_t ne10_ticks = measure_cfft_ne10(work, src, iters);
+    const uint64_t sve2_ticks =
+        measure_cfft_sve2_kernel(bench_work, src, ws, iters);
+
+    for (int i = 0; i < iters; i++) {
+        memcpy(&bench_src[(size_t)i * 2u * FFT1024_F32_N],
+               src,
+               2u * FFT1024_F32_N * sizeof(float));
+    }
+    const uint64_t ne10_ticks = measure_cfft_ne10(bench_work, bench_src, iters);
 
 #if defined(FFT_BENCH_USE_PMCCNTR)
     printf("Counter source: PMCCNTR_EL0 cycles\n");
@@ -226,6 +243,8 @@ int main(int argc, char **argv)
     ne10_fft1024_adapter_destroy();
 #endif
 
+    free(bench_work);
+    free(bench_src);
     free(work);
     free(src);
     free(ws);

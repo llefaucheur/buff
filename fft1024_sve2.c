@@ -228,6 +228,27 @@ static inline void radix4_notwiddle_forward_scalar(float *re, float *im,
 }
 
 #if defined(__GNUC__) || defined(__clang__)
+__attribute__((always_inline))
+#endif
+static inline void cmul_forward_mla_f32(svbool_t pg,
+                                        svfloat32_t ar,
+                                        svfloat32_t ai,
+                                        svfloat32_t br,
+                                        svfloat32_t bi,
+                                        svfloat32_t *rr,
+                                        svfloat32_t *ri)
+{
+    svfloat32_t tr = svmul_f32_x(pg, ar, br);
+    svfloat32_t ti = svmul_f32_x(pg, ai, br);
+
+    tr = svmls_f32_x(pg, tr, ai, bi);
+    ti = svmla_f32_x(pg, ti, ar, bi);
+
+    *rr = tr;
+    *ri = ti;
+}
+
+#if defined(__GNUC__) || defined(__clang__)
 __attribute__((unused))
 #endif
 static void cfft1024_split_radix4(float *re, float *im, int inverse)
@@ -272,19 +293,16 @@ static void cfft1024_split_radix4(float *re, float *im, int inverse)
                     w3i = svneg_f32_z(pg, w3i);
                 }
 
-                svfloat32_t a1r = svmul_f32_z(pg, x1r, w1r);
-                svfloat32_t a1i = svmul_f32_z(pg, x1i, w1r);
-                svfloat32_t a2r = svmul_f32_z(pg, x2r, w2r);
-                svfloat32_t a2i = svmul_f32_z(pg, x2i, w2r);
-                svfloat32_t a3r = svmul_f32_z(pg, x3r, w3r);
-                svfloat32_t a3i = svmul_f32_z(pg, x3i, w3r);
+                svfloat32_t a1r;
+                svfloat32_t a1i;
+                svfloat32_t a2r;
+                svfloat32_t a2i;
+                svfloat32_t a3r;
+                svfloat32_t a3i;
 
-                a1r = svmls_f32_z(pg, a1r, x1i, w1i);
-                a1i = svmla_f32_z(pg, a1i, x1r, w1i);
-                a2r = svmls_f32_z(pg, a2r, x2i, w2i);
-                a2i = svmla_f32_z(pg, a2i, x2r, w2i);
-                a3r = svmls_f32_z(pg, a3r, x3i, w3i);
-                a3i = svmla_f32_z(pg, a3i, x3r, w3i);
+                cmul_forward_mla_f32(pg, x1r, x1i, w1r, w1i, &a1r, &a1i);
+                cmul_forward_mla_f32(pg, x2r, x2i, w2r, w2i, &a2r, &a2i);
+                cmul_forward_mla_f32(pg, x3r, x3i, w3r, w3i, &a3r, &a3i);
 
                 svfloat32_t s02r = svadd_f32_z(pg, x0r, a2r);
                 svfloat32_t s02i = svadd_f32_z(pg, x0i, a2i);
@@ -385,19 +403,16 @@ static void cfft1024_split_radix4_core_ordered(float *re, float *im)
                 svfloat32_t w3r = svld1_f32(pg, &g_plan.tw_re[w3off + j]);
                 svfloat32_t w3i = svld1_f32(pg, &g_plan.tw_im[w3off + j]);
 
-                svfloat32_t a1r = svmul_f32_z(pg, x1r, w1r);
-                svfloat32_t a1i = svmul_f32_z(pg, x1i, w1r);
-                svfloat32_t a2r = svmul_f32_z(pg, x2r, w2r);
-                svfloat32_t a2i = svmul_f32_z(pg, x2i, w2r);
-                svfloat32_t a3r = svmul_f32_z(pg, x3r, w3r);
-                svfloat32_t a3i = svmul_f32_z(pg, x3i, w3r);
+                svfloat32_t a1r;
+                svfloat32_t a1i;
+                svfloat32_t a2r;
+                svfloat32_t a2i;
+                svfloat32_t a3r;
+                svfloat32_t a3i;
 
-                a1r = svmls_f32_z(pg, a1r, x1i, w1i);
-                a1i = svmla_f32_z(pg, a1i, x1r, w1i);
-                a2r = svmls_f32_z(pg, a2r, x2i, w2i);
-                a2i = svmla_f32_z(pg, a2i, x2r, w2i);
-                a3r = svmls_f32_z(pg, a3r, x3i, w3i);
-                a3i = svmla_f32_z(pg, a3i, x3r, w3i);
+                cmul_forward_mla_f32(pg, x1r, x1i, w1r, w1i, &a1r, &a1i);
+                cmul_forward_mla_f32(pg, x2r, x2i, w2r, w2i, &a2r, &a2i);
+                cmul_forward_mla_f32(pg, x3r, x3i, w3r, w3i, &a3r, &a3i);
 
                 svfloat32_t s02r = svadd_f32_z(pg, x0r, a2r);
                 svfloat32_t s02i = svadd_f32_z(pg, x0i, a2i);
