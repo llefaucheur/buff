@@ -53,35 +53,6 @@ static double max_abs_error(const float *a, const float *b, int count)
     return e;
 }
 
-static uint64_t measure_memcpy_ticks(float *dst, const float *src,
-                                     size_t bytes, int iters)
-{
-    uint64_t t0 = read_counter();
-    for (int i = 0; i < iters; i++) {
-        memcpy(dst, src, bytes);
-    }
-    uint64_t t1 = read_counter();
-    return (t1 - t0) / (uint64_t)iters;
-}
-
-static uint64_t measure_cfft_sve2(float *dst, const float *src,
-                                  fft1024_f32_workspace *ws,
-                                  int iters)
-{
-    const size_t bytes = 2u * FFT1024_F32_N * sizeof(float);
-    uint64_t t0 = read_counter();
-
-    for (int i = 0; i < iters; i++) {
-        memcpy(dst, src, bytes);
-        cfft1024_f32_sve2(dst, ws);
-    }
-
-    uint64_t t1 = read_counter();
-    const uint64_t copy_ticks = measure_memcpy_ticks(dst, src, bytes, iters);
-    const uint64_t total = (t1 - t0) / (uint64_t)iters;
-    return total > copy_ticks ? total - copy_ticks : total;
-}
-
 static uint64_t measure_cfft_ne10(float *dst, const float *src, int iters)
 {
 #if defined(FFT1024_USE_NE10)
@@ -101,10 +72,20 @@ static uint64_t measure_cfft_ne10(float *dst, const float *src, int iters)
 #endif
 }
 
-static void print_sve2_breakdown(float *dst, const float *src,
-                                 fft1024_f32_workspace *ws, int iters)
+typedef struct {
+    uint64_t profiled_ticks;
+    uint64_t parts_ticks;
+    uint64_t split_ticks;
+    uint64_t reorder_ticks;
+    uint64_t core_ticks;
+    uint64_t store_ticks;
+} sve2_profile_result;
+
+static sve2_profile_result measure_cfft_sve2_profiled(
+    float *dst, const float *src, fft1024_f32_workspace *ws, int iters)
 {
     const size_t bytes = 2u * FFT1024_F32_N * sizeof(float);
+    sve2_profile_result result;
     unsigned long long split_total = 0;
     unsigned long long reorder_total = 0;
     unsigned long long core_total = 0;
@@ -132,20 +113,30 @@ static void print_sve2_breakdown(float *dst, const float *src,
         profiled_total += (unsigned long long)(t1 - t0);
     }
 
+    result.profiled_ticks = profiled_total / (unsigned long long)iters;
+    result.parts_ticks =
+        (split_total + reorder_total + core_total + store_total) /
+        (unsigned long long)iters;
+    result.split_ticks = split_total / (unsigned long long)iters;
+    result.reorder_ticks = reorder_total / (unsigned long long)iters;
+    result.core_ticks = core_total / (unsigned long long)iters;
+    result.store_ticks = store_total / (unsigned long long)iters;
+    return result;
+}
+
+static void print_sve2_breakdown(const sve2_profile_result *p)
+{
     printf("\nSVE2 breakdown, ticks/call:\n");
-    printf("  profiled total:      %10llu\n",
-           profiled_total / (unsigned long long)iters);
-    printf("  sum of parts:        %10llu\n",
-           (split_total + reorder_total + core_total + store_total) /
-               (unsigned long long)iters);
+    printf("  profiled total:      %10llu\n", (unsigned long long)p->profiled_ticks);
+    printf("  sum of parts:        %10llu\n", (unsigned long long)p->parts_ticks);
     printf("  digitrev input load: %10llu\n",
-           split_total / (unsigned long long)iters);
+           (unsigned long long)p->split_ticks);
     printf("  separate reorder:    %10llu\n",
-           reorder_total / (unsigned long long)iters);
+           (unsigned long long)p->reorder_ticks);
     printf("  radix-4 core:        %10llu\n",
-           core_total / (unsigned long long)iters);
+           (unsigned long long)p->core_ticks);
     printf("  interleaved store:   %10llu\n",
-           store_total / (unsigned long long)iters);
+           (unsigned long long)p->store_ticks);
 }
 
 int main(int argc, char **argv)
@@ -181,7 +172,9 @@ int main(int argc, char **argv)
     }
 #endif
 
-    const uint64_t sve2_ticks = measure_cfft_sve2(work, src, ws, iters);
+    const sve2_profile_result sve2_profile =
+        measure_cfft_sve2_profiled(work, src, ws, iters);
+    const uint64_t sve2_ticks = sve2_profile.profiled_ticks;
     const uint64_t ne10_ticks = measure_cfft_ne10(work, src, iters);
 
 #if defined(FFT_BENCH_USE_PMCCNTR)
@@ -208,7 +201,7 @@ int main(int argc, char **argv)
         printf("unavailable     unavailable\n");
     }
 
-    print_sve2_breakdown(work, src, ws, iters < 100 ? iters : 100);
+    print_sve2_breakdown(&sve2_profile);
 
 #if defined(FFT1024_USE_NE10)
     ne10_fft1024_adapter_destroy();
