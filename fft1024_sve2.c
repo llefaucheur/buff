@@ -315,7 +315,7 @@ static inline uint64_t fft1024_read_counter(void)
     return v;
 }
 
-static void cfft1024_split_radix4_core_ordered(float *re, float *im, int inverse)
+static void cfft1024_split_radix4_core_ordered(float *re, float *im)
 {
     for (int stage = 0; stage < FFT1024_RADIX4_STAGES; stage++) {
         const int m = g_plan.m[stage];
@@ -328,7 +328,7 @@ static void cfft1024_split_radix4_core_ordered(float *re, float *im, int inverse
         for (int base = 0; base < FFT1024_F32_N; base += m) {
             int j = 1;
 
-            radix4_notwiddle_scalar(re, im, base, q, inverse);
+            radix4_notwiddle_scalar(re, im, base, q, 0);
 
             while (j < q) {
                 svbool_t pg = svwhilelt_b32((uint32_t)j, (uint32_t)q);
@@ -348,12 +348,6 @@ static void cfft1024_split_radix4_core_ordered(float *re, float *im, int inverse
                 svfloat32_t w2i = svld1_f32(pg, &g_plan.tw_im[w2off + j]);
                 svfloat32_t w3r = svld1_f32(pg, &g_plan.tw_re[w3off + j]);
                 svfloat32_t w3i = svld1_f32(pg, &g_plan.tw_im[w3off + j]);
-
-                if (inverse) {
-                    w1i = svneg_f32_z(pg, w1i);
-                    w2i = svneg_f32_z(pg, w2i);
-                    w3i = svneg_f32_z(pg, w3i);
-                }
 
                 svfloat32_t a1r = svmul_f32_z(pg, x1r, w1r);
                 svfloat32_t a1i = svmul_f32_z(pg, x1i, w1r);
@@ -382,22 +376,10 @@ static void cfft1024_split_radix4_core_ordered(float *re, float *im, int inverse
                 svfloat32_t y0i = svadd_f32_z(pg, s02i, s13i);
                 svfloat32_t y2r = svsub_f32_z(pg, s02r, s13r);
                 svfloat32_t y2i = svsub_f32_z(pg, s02i, s13i);
-                svfloat32_t y1r;
-                svfloat32_t y1i;
-                svfloat32_t y3r;
-                svfloat32_t y3i;
-
-                if (inverse) {
-                    y1r = svsub_f32_z(pg, d02r, d13i);
-                    y1i = svadd_f32_z(pg, d02i, d13r);
-                    y3r = svadd_f32_z(pg, d02r, d13i);
-                    y3i = svsub_f32_z(pg, d02i, d13r);
-                } else {
-                    y1r = svadd_f32_z(pg, d02r, d13i);
-                    y1i = svsub_f32_z(pg, d02i, d13r);
-                    y3r = svsub_f32_z(pg, d02r, d13i);
-                    y3i = svadd_f32_z(pg, d02i, d13r);
-                }
+                svfloat32_t y1r = svadd_f32_z(pg, d02r, d13i);
+                svfloat32_t y1i = svsub_f32_z(pg, d02i, d13r);
+                svfloat32_t y3r = svsub_f32_z(pg, d02r, d13i);
+                svfloat32_t y3i = svadd_f32_z(pg, d02i, d13r);
 
                 svst1_f32(pg, &re[base + j], y0r);
                 svst1_f32(pg, &im[base + j], y0i);
@@ -418,7 +400,7 @@ void cfft1024_f32_sve2(float *x_interleaved, fft1024_f32_workspace *ws)
 {
     fft1024_f32_sve2_init();
     split_load_interleaved_digitrev_1024(x_interleaved, ws->re, ws->im);
-    cfft1024_split_radix4_core_ordered(ws->re, ws->im, 0);
+    cfft1024_split_radix4_core_ordered(ws->re, ws->im);
     split_store_interleaved_1024(x_interleaved, ws->re, ws->im);
 }
 
@@ -435,7 +417,7 @@ void cfft1024_f32_sve2_profile_parts(float *x_interleaved,
     split_load_interleaved_digitrev_1024(x_interleaved, ws->re, ws->im);
     uint64_t t1 = fft1024_read_counter();
     uint64_t t2 = t1;
-    cfft1024_split_radix4_core_ordered(ws->re, ws->im, 0);
+    cfft1024_split_radix4_core_ordered(ws->re, ws->im);
     uint64_t t3 = fft1024_read_counter();
     split_store_interleaved_1024(x_interleaved, ws->re, ws->im);
     uint64_t t4 = fft1024_read_counter();
