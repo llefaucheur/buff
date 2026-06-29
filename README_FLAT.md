@@ -116,10 +116,14 @@ CFFT1024 SVE2      ...
 CFFT1024 Ne10 NEON ...
 ```
 
-The SVE2 table line is measured with the same profiled SVE2 wrapper used for
-the printed breakdown. The SVE2 call is in-place, so the benchmark copies the
-source input before timing and starts the timer at the FFT entry. The Ne10
-adapter is out-of-place and is timed around the Ne10 FFT call.
+The SVE2 table line is measured with one outer timer around repeated calls to
+`cfft1024_f32_sve2()`. The source is copied once before timing, then the FFT is
+run repeatedly in-place. This avoids putting `memcpy` inside the timed loop and
+also avoids subtracting a separate memcpy measurement.
+
+The printed SVE2 breakdown is diagnostic only. It uses extra counter reads
+inside the FFT call, so its `profiled total` can be higher than the clean table
+timing on Cortex-A520.
 
 Check the round-trip error first. It should be small for float32, not hundreds
 or thousands. A large value means the SVE2 forward/inverse pair is not valid,

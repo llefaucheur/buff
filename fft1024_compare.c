@@ -53,6 +53,24 @@ static double max_abs_error(const float *a, const float *b, int count)
     return e;
 }
 
+static uint64_t measure_cfft_sve2_kernel(float *work,
+                                         const float *src,
+                                         fft1024_f32_workspace *ws,
+                                         int iters)
+{
+    const size_t bytes = 2u * FFT1024_F32_N * sizeof(float);
+
+    memcpy(work, src, bytes);
+    uint64_t t0 = read_counter();
+
+    for (int i = 0; i < iters; i++) {
+        cfft1024_f32_sve2(work, ws);
+    }
+
+    uint64_t t1 = read_counter();
+    return (t1 - t0) / (uint64_t)iters;
+}
+
 static uint64_t measure_cfft_ne10(float *dst, const float *src, int iters)
 {
 #if defined(FFT1024_USE_NE10)
@@ -126,8 +144,9 @@ static sve2_profile_result measure_cfft_sve2_profiled(
 
 static void print_sve2_breakdown(const sve2_profile_result *p)
 {
-    printf("\nSVE2 breakdown, ticks/call:\n");
-    printf("  profiled total:      %10llu\n", (unsigned long long)p->profiled_ticks);
+    printf("\nSVE2 instrumented breakdown, ticks/call:\n");
+    printf("  profiled total:      %10llu  (includes internal counter overhead)\n",
+           (unsigned long long)p->profiled_ticks);
     printf("  sum of parts:        %10llu\n", (unsigned long long)p->parts_ticks);
     printf("  digitrev input load: %10llu\n",
            (unsigned long long)p->split_ticks);
@@ -173,8 +192,8 @@ int main(int argc, char **argv)
 #endif
 
     const sve2_profile_result sve2_profile =
-        measure_cfft_sve2_profiled(work, src, ws, iters);
-    const uint64_t sve2_ticks = sve2_profile.profiled_ticks;
+        measure_cfft_sve2_profiled(work, src, ws, iters < 100 ? iters : 100);
+    const uint64_t sve2_ticks = measure_cfft_sve2_kernel(work, src, ws, iters);
     const uint64_t ne10_ticks = measure_cfft_ne10(work, src, iters);
 
 #if defined(FFT_BENCH_USE_PMCCNTR)
