@@ -191,6 +191,42 @@ static inline void radix4_notwiddle_scalar(float *re, float *im,
     }
 }
 
+static inline void radix4_notwiddle_forward_scalar(float *re, float *im,
+                                                   int base, int q)
+{
+    const int i0 = base;
+    const int i1 = base + q;
+    const int i2 = base + 2 * q;
+    const int i3 = base + 3 * q;
+
+    const float x0r = re[i0];
+    const float x0i = im[i0];
+    const float x1r = re[i1];
+    const float x1i = im[i1];
+    const float x2r = re[i2];
+    const float x2i = im[i2];
+    const float x3r = re[i3];
+    const float x3i = im[i3];
+
+    const float s02r = x0r + x2r;
+    const float s02i = x0i + x2i;
+    const float d02r = x0r - x2r;
+    const float d02i = x0i - x2i;
+    const float s13r = x1r + x3r;
+    const float s13i = x1i + x3i;
+    const float d13r = x1r - x3r;
+    const float d13i = x1i - x3i;
+
+    re[i0] = s02r + s13r;
+    im[i0] = s02i + s13i;
+    re[i2] = s02r - s13r;
+    im[i2] = s02i - s13i;
+    re[i1] = d02r + d13i;
+    im[i1] = d02i - d13r;
+    re[i3] = d02r - d13i;
+    im[i3] = d02i + d13r;
+}
+
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((unused))
 #endif
@@ -328,7 +364,7 @@ static void cfft1024_split_radix4_core_ordered(float *re, float *im)
         for (int base = 0; base < FFT1024_F32_N; base += m) {
             int j = 1;
 
-            radix4_notwiddle_scalar(re, im, base, q, 0);
+            radix4_notwiddle_forward_scalar(re, im, base, q);
 
             while (j < q) {
                 svbool_t pg = svwhilelt_b32((uint32_t)j, (uint32_t)q);

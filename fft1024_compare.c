@@ -109,6 +109,7 @@ static void print_sve2_breakdown(float *dst, const float *src,
     unsigned long long reorder_total = 0;
     unsigned long long core_total = 0;
     unsigned long long store_total = 0;
+    unsigned long long profiled_total = 0;
 
     for (int i = 0; i < iters; i++) {
         unsigned long long split_ticks;
@@ -117,18 +118,26 @@ static void print_sve2_breakdown(float *dst, const float *src,
         unsigned long long store_ticks;
 
         memcpy(dst, src, bytes);
+        const uint64_t t0 = read_counter();
         cfft1024_f32_sve2_profile_parts(dst, ws,
                                         &split_ticks,
                                         &reorder_ticks,
                                         &core_ticks,
                                         &store_ticks);
+        const uint64_t t1 = read_counter();
         split_total += split_ticks;
         reorder_total += reorder_ticks;
         core_total += core_ticks;
         store_total += store_ticks;
+        profiled_total += (unsigned long long)(t1 - t0);
     }
 
     printf("\nSVE2 breakdown, ticks/call:\n");
+    printf("  profiled total:      %10llu\n",
+           profiled_total / (unsigned long long)iters);
+    printf("  sum of parts:        %10llu\n",
+           (split_total + reorder_total + core_total + store_total) /
+               (unsigned long long)iters);
     printf("  digitrev input load: %10llu\n",
            split_total / (unsigned long long)iters);
     printf("  separate reorder:    %10llu\n",
